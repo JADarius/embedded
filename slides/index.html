@@ -621,13 +621,24 @@ Kernel
 User space
 
 - Implement the system calls
+---
+## Registering the driver in the kernel
 
+Enter `capsules/core/src/driver.rs` in the enumeration `enum NUM` register your driver after the last driver.
+```rust
+pub enum NUM {
+	...
+	...
+	SevenSegment	= 0x90004;
+	Hello		= 0x90005;
+}
+```
 ---
 ## Kernel (hello.rs)
 
-Write the driver and implement the `Driver` trait (1 and 2).
+Write the driver and implement the `SyscallDriver` trait.
 
-Write a file `hello.rs` in the `kernel/drivers/src` folder.
+Write a file `hello.rs` in the `capsules/extra/src` folder.
 
 ```rust
 use kernel::syscall::{SyscallDriver, CommandReturn};
@@ -636,13 +647,14 @@ use kernel::{ErrorCode, ProcessId};
 /// Each driver is identified by a unique number
 ///
 /// numbers higher than 0xa0000000 are unused by standard drivers
-pub const DRIVER_NUM: usize = 0xa0000000;
+use crate::driver;
+pub const DRIVER_NUM: usize = driver::NUM::Hello as usize;
 /// The Hello structure
 pub struct Hello {}
 /// The hello implementation
 impl Hello {
-    pub fn new() -> Hello {
-        Hello {}
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -660,17 +672,13 @@ impl SyscallDriver for Hello {
             _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
         }
     }
-
-    fn allocate_grant(&self, process_id: kernel::ProcessId) -> Result<(), kernel::process::Error> {
-        todo!()
-    }
 }
 ```
 
 ---
 ## Kernel (main.rs)
 
-Register the driver for in the board's structure (3)
+Register the driver for in the board's structure
 
 In `main.rs` 
 
@@ -679,16 +687,11 @@ In `main.rs`
 
 /// A structure representing this platform that holds references to all
 /// capsules for this platform.
-struct MicroBit {
+pub struct MicroBit {
     console: &'static capsules::console::Console<'static>,
-    gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin<'static>>,
-    button: &'static capsules::button::Button<'static, nrf52::gpio::GPIOPin<'static>>,
-    rng: &'static capsules::rng::RngDriver<'static>,
-    ninedof: &'static capsules::ninedof::NineDof<'static>,
-    lsm303agr: &'static capsules::lsm303agr::Lsm303agrI2C<'static>,
-    temperature: &'static capsules::temperature::TemperatureSensor<'static>,
+    ...
     // hello driver
-    hello: &'static drivers::hello::Hello
+    hello_driver: &'static capsules_extra::hello::Hello,
 }
 // ...
 
@@ -699,15 +702,10 @@ impl SyscallDriverLookup for MicroBit {
         F: FnOnce(Option<&dyn kernel::syscall::SyscallDriver>) -> R,
     {
         match driver_num {
-            capsules::console::DRIVER_NUM => f(Some(self.console)),
-            capsules::gpio::DRIVER_NUM => f(Some(self.gpio)),
-            capsules::alarm::DRIVER_NUM => f(Some(self.alarm)),
-            capsules::button::DRIVER_NUM => f(Some(self.button)),
-            capsules::led::DRIVER_NUM => f(Some(self.led)),
-            capsules::ninedof::DRIVER_NUM => f(Some(self.ninedof)),
-            capsules::adc::DRIVER_NUM => f(Some(self.adc)),
+            capsules_extra::console::DRIVER_NUM => f(Some(self.console)),
+            ...
             // hello driver
-            dribers::hello::DRIVER_NUM => f(Some(self.hello)),
+            capsules_extra::hello::DRIVER_NUM => f(Some(self.hello_driver)),
             _ => f(None),
         }
     }
@@ -721,11 +719,14 @@ impl SyscallDriverLookup for MicroBit {
 /// initializes all the hardware, the address of this function is loaded and
 /// execution begins here.
 #[no_mangle]
-pub unsafe fn reset_handler() {
+pub unsafe fn main() {
     // ...
 
     /// Create a new instance of type Hello using Hello::new ()
-    let hello = static_init! (hello::Hello, hello::Hello::new());
+    let hello = static_init! (
+      capsules_extra::hello::Hello,
+      capsules_extra::hello::Hello::new()
+    );
 
     /// Create a new instance of the board's structure
     let microbit = MicroBit {
@@ -736,7 +737,7 @@ pub unsafe fn reset_handler() {
         led,
         rng,
         // the hello driver
-        hello: hello,
+        hello_driver: hello,
     };
     // ...
 }
@@ -745,13 +746,20 @@ pub unsafe fn reset_handler() {
 ---
 ## User space
 
-In your application's folder (`applications/` - update the example)
+In your application's folder (`libtock-c/examples`) 
+
+```bash
+mkdir hello
+cp blink/Makefile hello/
+cd hello
+touch hello.c hello.h
+```
 
 hello.h
 ```c
 #pragma once
 
-#define HELLO_DRIVER_NUMBER 0xa0000000
+#define HELLO_DRIVER_NUMBER 0x90005
 
 bool hello_is_available (void);
 
@@ -778,18 +786,18 @@ Add `command_num` 1 to the driver and print a text on the shell when it is calle
 
 ```rust
 /// The driver system calls implementation
-impl Driver for Hello {
+impl SyscallDriver for Hello {
     /// subscribe and allow will use the default implementation
 
     /// command syscall
-    fn command(&self, command_num: usize, _data1: usize, _data2: usize, _app_id: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, data: usize, _: usize, _: ProcessId) -> CommandReturn {
         match command_num {
             // command_num 0 is used to verify if the driver exists
-            0 => ReturnCode::SUCCESS,
+            0 => CommandReturn::success(),
             1 => // ...
 
             // the command number is not defined
-            _ => ReturnCode::ENOSUPPORT,
+            _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
         }
     }
 }
@@ -804,19 +812,19 @@ What happens if we add a command that runs an infinite loop? Why?
 
 ```rust
 /// The driver system calls implementation
-impl Driver for Hello {
+impl SyscallDriver for Hello {
     /// subscribe and allow will use the default implementation
 
     /// command syscall
-    fn command(&self, command_num: usize, _data1: usize, _data2: usize, _app_id: AppId) -> ReturnCode {
+    fn command(&self, command_num: usize, data: usize, _: usize, _: ProcessId) -> CommandReturn {
         match command_num {
             // command_num 0 is used to verify if the driver exists
-            0 => ReturnCode::SUCCESS,
+            0 => CommandReturn::success(),
             1 => // ...
             2 => loop {}
 
             // the command number is not defined
-            _ => ReturnCode::ENOSUPPORT,
+            _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
         }
     }
 }
@@ -837,47 +845,45 @@ What is the problem with this?
 Store a mutable value inside a immutable structure
 
 ```rust
-use kernel::{Driver, AppId, ReturnCode};
 use core::cell::Cell;
 
 /// Each driver is identified by a unique number
-///
-/// numbers higher than 0xa0000000 are unused by standard drivers
-pub const DRIVER_NUM: usize = 0xa0000000;
+use crate::driver;
+pub const DRIVER_NUM: usize = driver::NUM::Hello as usize;
 
 /// The Hello structure
 pub struct Hello {
-    nr: Cell<usize>
+    nr: Cell<u32>
 }
 
 
 /// The hello implementation
 impl Hello {
-    pub fn new() -> Hello {
-        Hello {
+    pub fn new() -> Self {
+        Self {
             nr: Cell::new (0)
         }
     }
 }
 
 /// The driver system calls implementation
-impl Driver for Hello {
+impl SyscallDriver for Hello {
     /// subscribe and allow will use the default implementation
 
     /// command syscall
-    fn command(&self, command_num: usize, _data1: usize, _data2: usize, _app_id: AppId) -> ReturnCode {
-        match command_num {
+    fn command(&self, command_num: usize, data: usize, _: usize, _: ProcessId) -> CommandReturn {
+      match command_num {
             // command_num 0 is used to verify if the driver exists
-            0 => ReturnCode::SUCCESS,
+            0 => CommandReturn::success(),
 
             2 => {
                 // modify number
                 self.nr.set (self.nr.get () + 1);
-                ReturnCode::SuccessWithValue { value: self.nr.get() }
+                CommandReturn::success_u32(self.nr.get());
             }
 
             // the command number is not defined
-            _ => ReturnCode::ENOSUPPORT,
+            _ => CommandReturn::failure(ErrorCode::NOSUPPORT),
         }
     }
 }
@@ -886,7 +892,7 @@ impl Driver for Hello {
 ## Workpoint 5 .top_image[![Work In Progress](images/work_in_progress.png)]
 
 Add `command_num` 2 that will increment a counter and return it to the app.
-  Hint: use `ReturnCode::SuccessWithValue { value: ... }`
+  Hint: use `CommandReturn::success_u32`
 
 Each time the app calls the system call, the driver will will return an incremented number.
 
