@@ -98,7 +98,7 @@ In `tock_project/tock` you have:
 
 The kernel folder is called 'tock', the apps folder is called `libtock-c`.
 
-In `kernel/microbit_v2` run:
+In `boards/microbit_v2` run:
 
 ```bash
 tock@tock-dev:~/tock-saiot/tock/boards/microbit_v2$ make flash
@@ -578,7 +578,7 @@ memop(op_type: u32, argument: u32) -> [[ VARIES ]] as u32
  - `argument`: The argument to `brk`, `sbrk`, or other call.
 
 Each memop operation is specific and details of each call can be found in
-the [memop syscall documentation](syscalls/memop.md).
+the [memop syscall documentation](https://github.com/tock/tock/blob/master/doc/syscalls/memop.md).
 
 #### Return
 
