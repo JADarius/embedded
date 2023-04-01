@@ -419,6 +419,30 @@ The application name here is `c_hello`, change it with another application to ru
 Upload the `blink` app.
 
 ---
+## LED
+The interface in libtock/led.h is used to control lights on Tock boards. On the Hail board, there are three LEDs which can be controlled: Red, Blue, and Green. The functions in the LED module are:
+```c
+#include <led.h>
+int led_count(void);
+```
+
+Which returns the number of LEDs available on the board.
+```c
+int led_on(int led_num);
+```
+
+Which turns an LED on, accessed by its number.
+```c
+int led_off(int led_num);
+```
+
+Which turns an LED off, accessed by its number.
+```c
+int led_toggle(int led_num);
+```
+Which toggles the state of an LED, accessed by its number.
+
+---
 
 class: split-50
 ## System Call
