@@ -40,7 +40,7 @@ Alexandru Radovici, ilustrations by [Mieuneli](http://miau.laura.ro)
 - Has separate <b>kernel and user space</b>
   - most embedded OS have the one piece software philosophy
 - Runs untrusted apps in user space
-- <b>Microkernel</b> architecture
+- <b>Monolithic</b> architecture
 - Kernel (and drivers) written in Rust
 - Apps written in C/C++ or Rust (any language that can be compiled)
 
@@ -774,7 +774,7 @@ hello.c
 #include "tock.h"
 
 bool hello_is_available (void) {
-    if (command (HELLO_DRIVER_NUMBER, 0, 0, 0) == TOCK_SUCCESS) {
+    if (command(HELLO_DRIVER_NUMBER, 0, 0, 0).type == TOCK_SYSCALL_SUCCESS) {
         return true;
     } else {
         return false;
